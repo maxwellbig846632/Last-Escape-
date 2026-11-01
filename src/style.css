@@ -1,0 +1,20 @@
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #10141d;
+  color: white;
+  font-family: Arial, sans-serif;
+}
+
+button {
+  cursor: pointer;
+  font-size: 16px;
+}
+
+button:active {
+  transform: scale(0.97);
+}
