@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 
 export default function App() {
   const [name, setName] = useState('')
@@ -8,8 +8,10 @@ export default function App() {
       .get('room')?.toUpperCase() || ''
   )
   const [room, setRoom] = useState(null)
+  const [lobbyData, setLobbyData] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [lobbyError, setLobbyError] = useState('')
   const [copied, setCopied] = useState(false)
 
   const inviteLink = room
@@ -21,9 +23,7 @@ export default function App() {
       `/.netlify/functions/${endpoint}`,
       {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       }
     )
@@ -34,10 +34,7 @@ export default function App() {
     try {
       result = JSON.parse(responseText)
     } catch {
-      throw new Error(
-        'เซิร์ฟเวอร์ส่งข้อมูลกลับมาไม่ถูกต้อง: ' +
-        responseText.slice(0, 200)
-      )
+      throw new Error('เซิร์ฟเวอร์ส่งข้อมูลกลับมาไม่ถูกต้อง')
     }
 
     if (!response.ok) {
@@ -61,7 +58,6 @@ export default function App() {
 
     setLoading(true)
     setError('')
-    setRoom(null)
 
     try {
       const result = await sendRequest('create-room', {
@@ -74,8 +70,6 @@ export default function App() {
       )
 
       setRoom(result)
-      setRoomCode(result.room_code)
-
       window.history.replaceState(
         {},
         '',
@@ -104,7 +98,6 @@ export default function App() {
 
     setLoading(true)
     setError('')
-    setRoom(null)
 
     try {
       const result = await sendRequest('join-room', {
@@ -118,7 +111,6 @@ export default function App() {
       )
 
       setRoom(result)
-
       window.history.replaceState(
         {},
         '',
@@ -131,14 +123,58 @@ export default function App() {
     }
   }
 
+  // ตรวจสอบรายชื่อผู้เล่นทุก 3 วินาที
+  useEffect(() => {
+    if (!room?.room_id || !room?.player_id) return
+
+    let active = true
+
+    async function loadRoom() {
+      try {
+        const sessionToken = localStorage.getItem(
+          `hell-city-${room.room_id}`
+        )
+
+        if (!sessionToken) {
+          throw new Error('ไม่พบข้อมูลยืนยันตัวผู้เล่น')
+        }
+
+        const result = await sendRequest('get-room', {
+          room_id: room.room_id,
+          player_id: room.player_id,
+          session_token: sessionToken
+        })
+
+        if (active) {
+          setLobbyData(result)
+          setLobbyError('')
+        }
+      } catch (err) {
+        if (active) setLobbyError(err.message)
+      }
+    }
+
+    loadRoom()
+    const timer = setInterval(loadRoom, 3000)
+
+    return () => {
+      active = false
+      clearInterval(timer)
+    }
+  }, [room])
+
   async function copyInviteLink() {
     try {
       await navigator.clipboard.writeText(inviteLink)
       setCopied(true)
     } catch {
-      setError('คัดลอกไม่ได้ กรุณาคัดลอกลิงก์จากช่องข้อความแทนครับ')
+      setError('คัดลอกไม่ได้ กรุณาคัดลอกจากช่องลิงก์แทนครับ')
     }
   }
+
+  const players = lobbyData?.players || []
+  const roomInfo = lobbyData?.room
+  const isOwner = roomInfo?.owner_player_id === room?.player_id
 
   return (
     <main style={{
@@ -159,205 +195,240 @@ export default function App() {
         HELL CITY ESCAPE
       </p>
 
-      <section style={{
-        maxWidth: '440px',
-        margin: '35px auto',
-        padding: '24px',
-        background: '#202938',
-        borderRadius: '16px'
-      }}>
+      {!room ? (
+        <section style={{
+          maxWidth: '440px',
+          margin: '35px auto',
+          padding: '24px',
+          background: '#202938',
+          borderRadius: '16px'
+        }}>
+          <h2>ห้องเกมออนไลน์</h2>
 
-        <h2>ห้องเกมออนไลน์</h2>
+          <p>ตั้งชื่อผู้เล่น</p>
 
-        <p>ตั้งชื่อผู้เล่น</p>
+          <input
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder="ชื่อผู้เล่น"
+            maxLength={30}
+            disabled={loading}
+            style={inputStyle}
+          />
 
-        <input
-          type="text"
-          value={name}
-          onChange={e => setName(e.target.value)}
-          placeholder="ชื่อผู้เล่น"
-          maxLength={30}
-          disabled={loading || !!room}
-          style={{
-            width: '100%',
-            padding: '14px',
-            borderRadius: '8px',
-            border: '1px solid #536174',
-            marginBottom: '20px',
-            fontSize: '16px',
-            boxSizing: 'border-box'
-          }}
-        />
+          <button
+            onClick={createRoom}
+            disabled={loading}
+            style={goldButton}
+          >
+            {loading ? 'กำลังดำเนินการ...' : 'สร้างห้องใหม่'}
+          </button>
 
-        {!room && (
-          <>
-            <button
-              onClick={createRoom}
-              disabled={loading}
-              style={{
-                width: '100%',
-                padding: '14px',
-                border: 'none',
-                borderRadius: '8px',
-                background: '#e0a33b',
-                color: '#111',
-                fontWeight: 'bold',
-                fontSize: '16px',
-                marginBottom: '24px'
-              }}
-            >
-              {loading ? 'กำลังดำเนินการ...' : 'สร้างห้องใหม่'}
-            </button>
-
-            <div style={{
-              borderTop: '1px solid #536174',
-              paddingTop: '20px'
-            }}>
-              <h3>เข้าร่วมห้อง</h3>
-
-              <input
-                type="text"
-                value={roomCode}
-                onChange={e =>
-                  setRoomCode(
-                    e.target.value.toUpperCase().slice(0, 6)
-                  )
-                }
-                placeholder="กรอกรหัสห้อง 6 ตัว"
-                maxLength={6}
-                disabled={loading}
-                style={{
-                  width: '100%',
-                  padding: '14px',
-                  borderRadius: '8px',
-                  border: '1px solid #536174',
-                  marginBottom: '12px',
-                  fontSize: '18px',
-                  textAlign: 'center',
-                  letterSpacing: '4px',
-                  boxSizing: 'border-box'
-                }}
-              />
-
-              <button
-                onClick={joinRoom}
-                disabled={loading}
-                style={{
-                  width: '100%',
-                  padding: '14px',
-                  border: 'none',
-                  borderRadius: '8px',
-                  background: '#4b9bd8',
-                  color: 'white',
-                  fontWeight: 'bold',
-                  fontSize: '16px'
-                }}
-              >
-                {loading ? 'กำลังเข้าห้อง...' : 'เข้าร่วมห้อง'}
-              </button>
-            </div>
-          </>
-        )}
-
-        {error && (
           <div style={{
-            marginTop: '20px',
-            padding: '14px',
-            background: '#3b2025',
-            border: '1px solid #a94452',
-            borderRadius: '8px',
-            textAlign: 'left',
-            overflowWrap: 'anywhere'
-          }}>
-            <strong style={{ color: '#ff7777' }}>
-              เกิดข้อผิดพลาด
-            </strong>
-            <p>{error}</p>
-          </div>
-        )}
-
-        {room && (
-          <div style={{
+            borderTop: '1px solid #536174',
             marginTop: '24px',
-            padding: '20px',
-            background: '#10141d',
-            borderRadius: '10px'
+            paddingTop: '20px'
           }}>
-            <h2 style={{ color: '#70d69b' }}>
-              {room.player_status === 'spectator'
-                ? 'เข้าชมห้องสำเร็จ'
-                : 'เข้าห้องสำเร็จ!'}
-            </h2>
-
-            <p>รหัสห้อง</p>
-
-            <h1 style={{
-              color: '#e0a33b',
-              letterSpacing: '6px',
-              fontSize: '32px'
-            }}>
-              {room.room_code}
-            </h1>
-
-            <p>ลิงก์เชิญเพื่อน</p>
+            <h3>เข้าร่วมห้อง</h3>
 
             <input
-              type="text"
-              readOnly
-              value={inviteLink}
-              onFocus={e => e.target.select()}
+              value={roomCode}
+              onChange={e =>
+                setRoomCode(e.target.value.toUpperCase().slice(0, 6))
+              }
+              placeholder="รหัสห้อง 6 ตัว"
+              maxLength={6}
+              disabled={loading}
               style={{
-                width: '100%',
-                padding: '12px',
-                borderRadius: '8px',
-                border: '1px solid #536174',
-                background: '#202938',
-                color: 'white',
-                fontSize: '14px',
-                boxSizing: 'border-box'
+                ...inputStyle,
+                textAlign: 'center',
+                letterSpacing: '4px'
               }}
             />
 
             <button
-              onClick={copyInviteLink}
-              style={{
-                width: '100%',
-                padding: '14px',
-                marginTop: '12px',
-                border: 'none',
-                borderRadius: '8px',
-                background: '#e0a33b',
-                color: '#111',
-                fontWeight: 'bold',
-                fontSize: '16px'
-              }}
+              onClick={joinRoom}
+              disabled={loading}
+              style={blueButton}
             >
-              {copied ? 'คัดลอกแล้ว!' : 'คัดลอกลิงก์เชิญ'}
+              {loading ? 'กำลังเข้าห้อง...' : 'เข้าร่วมห้อง'}
             </button>
+          </div>
+
+          {error && <p style={errorStyle}>{error}</p>}
+        </section>
+      ) : (
+        <section style={{
+          maxWidth: '500px',
+          margin: '30px auto',
+          padding: '24px',
+          background: '#202938',
+          borderRadius: '16px'
+        }}>
+          <h2 style={{ color: '#70d69b' }}>
+            ห้องรอผู้เล่น
+          </h2>
+
+          <p>รหัสห้อง</p>
+
+          <h1 style={{
+            color: '#e0a33b',
+            letterSpacing: '6px'
+          }}>
+            {room.room_code}
+          </h1>
+
+          <p>ลิงก์เชิญเพื่อน</p>
+
+          <input
+            readOnly
+            value={inviteLink}
+            onFocus={e => e.target.select()}
+            style={inputStyle}
+          />
+
+          <button
+            onClick={copyInviteLink}
+            style={goldButton}
+          >
+            {copied ? 'คัดลอกแล้ว!' : 'คัดลอกลิงก์เชิญ'}
+          </button>
+
+          <div style={{
+            marginTop: '28px',
+            textAlign: 'left',
+            borderTop: '1px solid #536174',
+            paddingTop: '18px'
+          }}>
+            <h3>
+              ผู้เล่นในห้อง ({players.length}/
+              {roomInfo?.max_players || 6})
+            </h3>
+
+            {!lobbyData && (
+              <p style={{ color: '#e0a33b' }}>
+                กำลังโหลดรายชื่อผู้เล่น...
+              </p>
+            )}
+
+            {players.map((player, index) => (
+              <div
+                key={player.id}
+                style={{
+                  background: '#10141d',
+                  padding: '14px',
+                  borderRadius: '8px',
+                  marginBottom: '10px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                <div>
+                  <strong>{player.player_name}</strong>
+                  {player.is_owner && (
+                    <span style={{ color: '#e0a33b' }}>
+                      {' '}เจ้าของห้อง
+                    </span>
+                  )}
+                  <div style={{
+                    fontSize: '12px',
+                    color: '#9aa6b5',
+                    marginTop: '5px'
+                  }}>
+                    {player.status === 'spectator'
+                      ? 'ผู้ชม'
+                      : `ผู้เล่นหมายเลข ${player.seat_number || index + 1}`}
+                  </div>
+                </div>
+
+                <span style={{
+                  color: player.status === 'connected'
+                    ? '#70d69b'
+                    : '#e0a33b',
+                  fontSize: '13px'
+                }}>
+                  {player.status === 'connected'
+                    ? 'อยู่ในห้อง'
+                    : player.status}
+                </span>
+              </div>
+            ))}
+
+            {lobbyError && (
+              <p style={errorStyle}>
+                อัปเดตข้อมูลไม่สำเร็จ: {lobbyError}
+              </p>
+            )}
 
             <p style={{
               color: '#9aa6b5',
               fontSize: '13px',
-              marginTop: '18px'
+              textAlign: 'center',
+              marginTop: '20px'
             }}>
-              ส่งลิงก์นี้ให้เพื่อนเพื่อเข้าห้องเดียวกัน
+              ระบบตรวจสอบรายชื่ออัตโนมัติทุก 3 วินาที
+            </p>
+
+            {isOwner && (
+              <p style={{
+                color: '#e0a33b',
+                textAlign: 'center'
+              }}>
+                คุณเป็นเจ้าของห้อง
+              </p>
+            )}
+
+            <p style={{
+              color: '#9aa6b5',
+              textAlign: 'center',
+              fontSize: '13px'
+            }}>
+              รอระบบพร้อมเล่นในขั้นตอนถัดไป
             </p>
           </div>
-        )}
-
-      </section>
+        </section>
+      )}
 
       <p style={{ color: '#9aa6b5' }}>
         ผู้เล่น 2–6 คน
       </p>
-
-      <p style={{
-        color: '#667080',
-        fontSize: '12px'
-      }}>
-        HELL CITY ESCAPE ONLINE
-      </p>
-
     </main>
   )
+}
+
+const inputStyle = {
+  width: '100%',
+  padding: '14px',
+  borderRadius: '8px',
+  border: '1px solid #536174',
+  marginBottom: '14px',
+  fontSize: '16px',
+  boxSizing: 'border-box',
+  background: '#fff',
+  color: '#111'
+}
+
+const goldButton = {
+  width: '100%',
+  padding: '14px',
+  border: 'none',
+  borderRadius: '8px',
+  background: '#e0a33b',
+  color: '#111',
+  fontWeight: 'bold',
+  fontSize: '16px',
+  marginBottom: '10px'
+}
+
+const blueButton = {
+  ...goldButton,
+  background: '#4b9bd8',
+  color: 'white'
+}
+
+const errorStyle = {
+  color: '#ff8888',
+  overflowWrap: 'anywhere'
 }
