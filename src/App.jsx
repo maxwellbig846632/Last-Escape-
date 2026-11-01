@@ -31,8 +31,7 @@ export default function App() {
       const result = await response.json()
 
       if (!response.ok) {
-        throw new Error(result.error || 'สร้างห้องไม่สำเร็จ')
-      }
+        throw new Error(result.detail ? `${result.error}: ${result.detail}` : (result.error || 'สร้างห้องไม่สำเร็จ'))
 
       setRoom(result)
     } catch (err) {
